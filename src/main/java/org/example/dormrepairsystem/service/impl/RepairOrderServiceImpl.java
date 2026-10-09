@@ -83,6 +83,7 @@ public class RepairOrderServiceImpl extends ServiceImpl<RepairOrderMapper, Repai
     @Override
     public List<RepairOrder> getByRepairmanId(Long repairmanId, String status) {
         LambdaQueryWrapper<RepairOrder> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(RepairOrder::getRepairmanId, repairmanId);
         applyStatusFilter(wrapper, status);
         wrapper.orderByDesc(RepairOrder::getUpdateTime); // 按最后修改时间倒序
         return this.list(wrapper);

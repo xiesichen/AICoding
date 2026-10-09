@@ -35,7 +35,7 @@ import java.util.Set;
 public class RepairOrderController {
 
     /** 合法订单状态 */
-    private static final Set<String> VALID_STATUSES = Set.of("待处理", "维修中", "已完成", "已取消");
+    private static final Set<String> VALID_STATUSES = Set.of("待处理", "维修中", "待确认", "已完成", "已取消");
 
     /** 每个订单最多上传的图片数量 */
     private static final int MAX_IMAGES_PER_ORDER = 3;
@@ -221,7 +221,7 @@ public class RepairOrderController {
                     return badRequest(result, "当前状态不允许取消");
                 }
             } else if ("已完成".equals(newStatus)) {
-                if (!"维修中".equals(order.getOrderStatus())) {
+                if (!"待确认".equals(order.getOrderStatus())) {
                     return badRequest(result, "只有维修中的订单可以确认完成");
                 }
             } else {
@@ -231,8 +231,8 @@ public class RepairOrderController {
             if (!Objects.equals(currentUserId, order.getRepairmanId())) {
                 return forbidden(result, "只能操作自己接取的报修单");
             }
-            if (!"维修中".equals(newStatus) && !"已完成".equals(newStatus)) {
-                return forbidden(result, "维修人员只能把订单置为维修中或已完成");
+            if (!"维修中".equals(newStatus) && !"待确认".equals(newStatus)) {
+                return forbidden(result, "维修人员只能把订单置为维修中或待确认");
             }
         }
 
@@ -455,6 +455,7 @@ public class RepairOrderController {
 
         try {
             // 从数据库删除记录
+            fileStorage.deleteImage(orderImage.getImageUrl());
             boolean success = orderImageService.removeById(imageId);
             if (success) {
                 log.info("删除成功：图片ID={}, 图片URL={}", imageId, orderImage.getImageUrl());
@@ -478,6 +479,41 @@ public class RepairOrderController {
     /**
      * 当前登录用户是否有权访问该订单：管理员不限，学生限本人报修单，维修人员限本人接取的报修单
      */
+    /**
+     * 按设备类型统计工单数量（仅管理员，数量倒序）
+     */
+    @GetMapping("/stats/device-type")
+    public ResponseEntity<Map<String, Object>> statsByDeviceType(HttpServletRequest request) {
+        Map<String, Object> result = new HashMap<>();
+        if (!AuthUtil.isAdmin(request)) {
+            return forbidden(result, "无权访问");
+        }
+
+        Map<String, Integer> counter = new HashMap<>();
+        for (RepairOrder order : repairOrderService.list()) {
+            String type = order.getDeviceType();
+            if (type == null || type.isBlank()) {
+                continue;
+            }
+            counter.merge(type, 1, Integer::sum);
+        }
+
+        List<Map<String, Object>> data = counter.entrySet().stream()
+                .sorted((a, b) -> b.getValue() - a.getValue())
+                .map(e -> {
+                    Map<String, Object> item = new HashMap<>();
+                    item.put("deviceType", e.getKey());
+                    item.put("count", e.getValue());
+                    return item;
+                })
+                .toList();
+
+        log.info("按设备类型统计：{}", data);
+        result.put("success", true);
+        result.put("data", data);
+        return new ResponseEntity<>(result, HttpStatus.OK);
+    }
+
     private boolean canAccessOrder(RepairOrder order, HttpServletRequest request) {
         if (AuthUtil.isAdmin(request)) {
             return true;
